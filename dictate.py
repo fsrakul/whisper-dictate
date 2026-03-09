@@ -28,6 +28,7 @@ DIALOG_WIDTH = 650
 DIALOG_HEIGHT = 340
 
 AVAILABLE_MODELS = ["tiny", "base", "small", "medium", "large-v3"]
+AVAILABLE_DEVICES = ["auto", "cpu", "cuda"]
 
 # -- Konfiguration --
 
@@ -35,6 +36,7 @@ DEFAULT_CONFIG = {
     "model_size": "medium",
     "language": "de",
     "hotkey": "<ctrl>+<alt>+d",
+    "device": "auto",
 }
 
 
@@ -121,8 +123,10 @@ class DictateApp:
 
     def _load_model(self):
         from faster_whisper import WhisperModel
+        device = self.cfg.get("device", "auto")
+        compute_type = "float16" if device == "cuda" else "int8"
         self.model = WhisperModel(
-            self.cfg["model_size"], device="cpu", compute_type="int8"
+            self.cfg["model_size"], device=device, compute_type=compute_type
         )
         self.model_loaded = True
 
@@ -477,7 +481,7 @@ class DictateApp:
 
         settings.protocol("WM_DELETE_WINDOW", _on_close)
 
-        w, h = 380, 220
+        w, h = 380, 260
         screen_w = settings.winfo_screenwidth()
         screen_h = settings.winfo_screenheight()
         settings.geometry(f"{w}x{h}+{(screen_w - w) // 2}+{(screen_h - h) // 2}")
@@ -499,26 +503,40 @@ class DictateApp:
         )
         model_combo.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
 
+        # -- Gerät (CPU/GPU) --
+        tk.Label(frame, text="Gerät:", font=FONT_NORMAL).grid(
+            row=1, column=0, sticky="w", pady=(0, 8)
+        )
+        device_var = tk.StringVar(value=self.cfg.get("device", "auto"))
+        device_combo = ttk.Combobox(
+            frame,
+            textvariable=device_var,
+            values=AVAILABLE_DEVICES,
+            state="readonly",
+            width=18,
+        )
+        device_combo.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+
         # -- Sprache --
         tk.Label(frame, text="Sprache:", font=FONT_NORMAL).grid(
-            row=1, column=0, sticky="w", pady=(0, 8)
+            row=2, column=0, sticky="w", pady=(0, 8)
         )
         lang_var = tk.StringVar(value=self.cfg["language"] or "")
         lang_entry = tk.Entry(frame, textvariable=lang_var, width=20, font=FONT_NORMAL)
-        lang_entry.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+        lang_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
         tk.Label(frame, text="(leer = auto)", font=FONT_STATUS, fg="#888").grid(
-            row=1, column=2, sticky="w", padx=(4, 0), pady=(0, 8)
+            row=2, column=2, sticky="w", padx=(4, 0), pady=(0, 8)
         )
 
         # -- Hotkey --
         tk.Label(frame, text="Hotkey:", font=FONT_NORMAL).grid(
-            row=2, column=0, sticky="w", pady=(0, 8)
+            row=3, column=0, sticky="w", pady=(0, 8)
         )
         hotkey_var = tk.StringVar(value=self.cfg["hotkey"])
         hotkey_entry = tk.Entry(
             frame, textvariable=hotkey_var, width=20, font=FONT_NORMAL
         )
-        hotkey_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+        hotkey_entry.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
 
         # Hotkey-Capture: Tastenkombination aufzeichnen
         captured_keys: set[str] = set()
@@ -558,15 +576,16 @@ class DictateApp:
 
         # -- Fehler-Label --
         error_label = tk.Label(frame, text="", font=FONT_STATUS, fg="#cc0000")
-        error_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        error_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         # -- Buttons --
         btn_frame = tk.Frame(frame)
-        btn_frame.grid(row=4, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        btn_frame.grid(row=5, column=0, columnspan=3, sticky="e", pady=(12, 0))
 
         def _save():
             new_hotkey = hotkey_var.get().strip()
             new_model = model_var.get()
+            new_device = device_var.get()
             new_lang = lang_var.get().strip() or ""
 
             # Hotkey validieren
@@ -576,10 +595,13 @@ class DictateApp:
                 error_label.config(text=f"Ungültiger Hotkey: {new_hotkey}")
                 return
 
-            model_changed = new_model != self.cfg["model_size"]
-            hotkey_changed = new_hotkey != self.cfg["hotkey"]
+            model_changed = (
+                new_model != self.cfg["model_size"]
+                or new_device != self.cfg.get("device", "auto")
+            )
 
             self.cfg["model_size"] = new_model
+            self.cfg["device"] = new_device
             self.cfg["language"] = new_lang
             self.cfg["hotkey"] = new_hotkey
             save_config(self.cfg)
