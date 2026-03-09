@@ -1,0 +1,13 @@
+[project]
+name = "faster-whisper-tool"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "faster-whisper>=1.2.1",
+    "pynput>=1.8.1",
+    "pyperclip>=1.11.0",
+    "scipy>=1.17.1",
+    "sounddevice>=0.5.5",
+]
