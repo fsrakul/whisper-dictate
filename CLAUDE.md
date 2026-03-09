@@ -37,7 +37,13 @@ uv run dictate.py --remove-autostart   # Autostart entfernen
 
 ## Konfiguration
 
-Konstanten am Anfang von `dictate.py`:
-- `MODEL_SIZE` — Whisper-Modellgröße (tiny/base/small/medium/large-v3)
-- `LANGUAGE` — Sprache ("de", None für auto-detect)
-- `SAMPLE_RATE` — Audio-Samplerate (16000)
+Einstellungen werden in einer JSON-Datei gespeichert:
+- Windows: `%APPDATA%/whisper-dictate/config.json`
+- Linux: `~/.config/whisper-dictate/config.json`
+
+Konfigurierbare Werte (auch über den Zahnrad-Button im Dialog änderbar):
+- `model_size` — Whisper-Modellgröße (tiny/base/small/medium/large-v3)
+- `language` — Sprache ("de", "" für auto-detect)
+- `hotkey` — Globaler Hotkey im pynput-Format (z.B. `<ctrl>+<alt>+d`)
+
+Defaults: siehe `DEFAULT_CONFIG` in `dictate.py`.

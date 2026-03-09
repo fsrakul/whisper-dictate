@@ -7,6 +7,7 @@ Mehrere Aufnahmen werden im selben Dialog aneinandergehängt.
 Funktioniert ohne Admin-Rechte.
 """
 
+import json
 import os
 import sys
 import platform
@@ -15,19 +16,65 @@ import tempfile
 from pathlib import Path
 
 import tkinter as tk
+from tkinter import ttk
 import numpy as np
 import sounddevice as sd
 from scipy.io import wavfile
 from pynput import keyboard
 
-# -- Konfiguration --
-HOTKEY_KEYS = keyboard.HotKey.parse("<ctrl>+<alt>+d")
-HOTKEY_LABEL = "Ctrl+Alt+D"
-MODEL_SIZE = "medium"  # tiny, base, small, medium, large-v3
-LANGUAGE = "de"         # None für auto-detect
+# -- Konstanten --
 SAMPLE_RATE = 16000
 DIALOG_WIDTH = 650
 DIALOG_HEIGHT = 340
+
+AVAILABLE_MODELS = ["tiny", "base", "small", "medium", "large-v3"]
+
+# -- Konfiguration --
+
+DEFAULT_CONFIG = {
+    "model_size": "medium",
+    "language": "de",
+    "hotkey": "<ctrl>+<alt>+d",
+}
+
+
+def _config_path() -> Path:
+    if platform.system() == "Windows":
+        return Path(os.environ["APPDATA"]) / "whisper-dictate" / "config.json"
+    return Path.home() / ".config" / "whisper-dictate" / "config.json"
+
+
+def load_config() -> dict:
+    path = _config_path()
+    if path.exists():
+        try:
+            with open(path, encoding="utf-8") as f:
+                stored = json.load(f)
+            # Merge mit Defaults für fehlende Keys
+            return {**DEFAULT_CONFIG, **stored}
+        except (json.JSONDecodeError, OSError):
+            pass
+    return dict(DEFAULT_CONFIG)
+
+
+def save_config(cfg: dict):
+    path = _config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+def hotkey_label(hotkey_str: str) -> str:
+    """Erzeugt ein lesbares Label aus einem pynput-Hotkey-String wie '<ctrl>+<alt>+d'."""
+    parts = hotkey_str.split("+")
+    nice = []
+    for p in parts:
+        p = p.strip()
+        if p.startswith("<") and p.endswith(">"):
+            nice.append(p[1:-1].capitalize())
+        else:
+            nice.append(p.upper())
+    return "+".join(nice)
 
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
@@ -46,6 +93,8 @@ class DictateApp:
         self.root = root
         self.root.withdraw()
         self.root.title("Whisper Dictate")
+
+        self.cfg = load_config()
 
         self.recording = False
         self.transcribing = False
@@ -72,11 +121,14 @@ class DictateApp:
 
     def _load_model(self):
         from faster_whisper import WhisperModel
-        self.model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+        self.model = WhisperModel(
+            self.cfg["model_size"], device="cpu", compute_type="int8"
+        )
         self.model_loaded = True
 
     def _start_hotkey_listener(self):
-        hotkey = keyboard.HotKey(HOTKEY_KEYS, self._on_hotkey)
+        hotkey_keys = keyboard.HotKey.parse(self.cfg["hotkey"])
+        hotkey = keyboard.HotKey(hotkey_keys, self._on_hotkey)
 
         def on_press(key):
             hotkey.press(self._listener.canonical(key))
@@ -87,6 +139,12 @@ class DictateApp:
         self._listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         self._listener.daemon = True
         self._listener.start()
+
+    def _restart_hotkey_listener(self):
+        """Hotkey-Listener mit neuer Konfiguration neu starten."""
+        if hasattr(self, '_listener') and self._listener.is_alive():
+            self._listener.stop()
+        self._start_hotkey_listener()
 
     def _on_hotkey(self):
         self.root.after(0, self._toggle_recording)
@@ -195,18 +253,33 @@ class DictateApp:
         )
         self.cancel_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
-        # Statusleiste (ganz unten)
+        # Statusleiste (ganz unten) — Frame mit Label + Config-Button
+        status_frame = tk.Frame(main_frame, relief=tk.SUNKEN, bd=1)
+        status_frame.grid(row=2, column=0, sticky="ew")
+
         self.status_bar = tk.Label(
-            main_frame,
+            status_frame,
             text="Bereit",
             font=FONT_STATUS,
             fg="#888",
             anchor=tk.W,
-            relief=tk.SUNKEN,
             padx=6,
             pady=2,
         )
-        self.status_bar.grid(row=2, column=0, sticky="ew")
+        self.status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        config_btn = tk.Button(
+            status_frame,
+            text="\u2699",
+            command=self._open_settings,
+            font=(FONT_FAMILY, 11),
+            relief=tk.FLAT,
+            cursor="hand2",
+            bd=0,
+            padx=6,
+            pady=0,
+        )
+        config_btn.pack(side=tk.RIGHT)
 
         # Shortcuts
         self.dialog.bind("<Escape>", lambda e: self._close_dialog())
@@ -321,8 +394,9 @@ class DictateApp:
                 tmp_path = f.name
                 wavfile.write(tmp_path, SAMPLE_RATE, audio_int16)
 
+            lang = self.cfg["language"] or None
             segments, info = self.model.transcribe(
-                tmp_path, language=LANGUAGE, beam_size=5
+                tmp_path, language=lang, beam_size=5
             )
             text = " ".join(seg.text.strip() for seg in segments)
 
@@ -349,7 +423,7 @@ class DictateApp:
             self.result_text.insert(tk.INSERT, text.strip())
 
         self._set_status(
-            f"Fertig. {HOTKEY_LABEL} oder 'Neue Aufnahme' fuer weiteres Diktat.",
+            f"Fertig. {hotkey_label(self.cfg['hotkey'])} oder 'Neue Aufnahme' fuer weiteres Diktat.",
             fg="#228b22",
         )
         self._update_button_states()
@@ -382,6 +456,152 @@ class DictateApp:
         if self.dialog:
             self.dialog.destroy()
             self.dialog = None
+
+    # -- Einstellungen --
+
+    def _open_settings(self):
+        """Einstellungs-Dialog öffnen."""
+        # Globalen Hotkey-Listener pausieren, damit er nicht bei Tastendruck feuert
+        if hasattr(self, '_listener') and self._listener.is_alive():
+            self._listener.stop()
+
+        settings = tk.Toplevel(self.dialog or self.root)
+        settings.title("Einstellungen")
+        settings.attributes("-topmost", True)
+        settings.resizable(False, False)
+        settings.grab_set()
+
+        def _on_close():
+            settings.destroy()
+            self._start_hotkey_listener()
+
+        settings.protocol("WM_DELETE_WINDOW", _on_close)
+
+        w, h = 380, 220
+        screen_w = settings.winfo_screenwidth()
+        screen_h = settings.winfo_screenheight()
+        settings.geometry(f"{w}x{h}+{(screen_w - w) // 2}+{(screen_h - h) // 2}")
+
+        frame = tk.Frame(settings, padx=20, pady=15)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # -- Modellauswahl --
+        tk.Label(frame, text="Whisper-Modell:", font=FONT_NORMAL).grid(
+            row=0, column=0, sticky="w", pady=(0, 8)
+        )
+        model_var = tk.StringVar(value=self.cfg["model_size"])
+        model_combo = ttk.Combobox(
+            frame,
+            textvariable=model_var,
+            values=AVAILABLE_MODELS,
+            state="readonly",
+            width=18,
+        )
+        model_combo.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+
+        # -- Sprache --
+        tk.Label(frame, text="Sprache:", font=FONT_NORMAL).grid(
+            row=1, column=0, sticky="w", pady=(0, 8)
+        )
+        lang_var = tk.StringVar(value=self.cfg["language"] or "")
+        lang_entry = tk.Entry(frame, textvariable=lang_var, width=20, font=FONT_NORMAL)
+        lang_entry.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+        tk.Label(frame, text="(leer = auto)", font=FONT_STATUS, fg="#888").grid(
+            row=1, column=2, sticky="w", padx=(4, 0), pady=(0, 8)
+        )
+
+        # -- Hotkey --
+        tk.Label(frame, text="Hotkey:", font=FONT_NORMAL).grid(
+            row=2, column=0, sticky="w", pady=(0, 8)
+        )
+        hotkey_var = tk.StringVar(value=self.cfg["hotkey"])
+        hotkey_entry = tk.Entry(
+            frame, textvariable=hotkey_var, width=20, font=FONT_NORMAL
+        )
+        hotkey_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+
+        # Hotkey-Capture: Tastenkombination aufzeichnen
+        captured_keys: set[str] = set()
+        capturing = [False]
+
+        def _start_capture(event=None):
+            capturing[0] = True
+            captured_keys.clear()
+            hotkey_entry.config(fg="#cc0000")
+            hotkey_var.set("Taste drücken...")
+
+        def _on_key(event):
+            if not capturing[0]:
+                return
+            key_name = event.keysym
+            # Modifier-Keys erkennen
+            modifiers = {
+                "Control_L": "<ctrl>", "Control_R": "<ctrl>",
+                "Alt_L": "<alt>", "Alt_R": "<alt>",
+                "Shift_L": "<shift>", "Shift_R": "<shift>",
+            }
+            if key_name in modifiers:
+                captured_keys.add(modifiers[key_name])
+            else:
+                captured_keys.add(key_name.lower())
+                # Fertig: Hotkey zusammensetzen
+                capturing[0] = False
+                # Sortierung: Modifier zuerst, dann der normale Key
+                mods = sorted(k for k in captured_keys if k.startswith("<"))
+                normals = sorted(k for k in captured_keys if not k.startswith("<"))
+                result = "+".join(mods + normals)
+                hotkey_var.set(result)
+                hotkey_entry.config(fg="#000")
+
+        hotkey_entry.bind("<FocusIn>", _start_capture)
+        hotkey_entry.bind("<Key>", _on_key)
+
+        # -- Fehler-Label --
+        error_label = tk.Label(frame, text="", font=FONT_STATUS, fg="#cc0000")
+        error_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
+
+        # -- Buttons --
+        btn_frame = tk.Frame(frame)
+        btn_frame.grid(row=4, column=0, columnspan=3, sticky="e", pady=(12, 0))
+
+        def _save():
+            new_hotkey = hotkey_var.get().strip()
+            new_model = model_var.get()
+            new_lang = lang_var.get().strip() or ""
+
+            # Hotkey validieren
+            try:
+                keyboard.HotKey.parse(new_hotkey)
+            except Exception:
+                error_label.config(text=f"Ungültiger Hotkey: {new_hotkey}")
+                return
+
+            model_changed = new_model != self.cfg["model_size"]
+            hotkey_changed = new_hotkey != self.cfg["hotkey"]
+
+            self.cfg["model_size"] = new_model
+            self.cfg["language"] = new_lang
+            self.cfg["hotkey"] = new_hotkey
+            save_config(self.cfg)
+
+            if model_changed:
+                self.model = None
+                self.model_loaded = False
+                threading.Thread(target=self._load_model, daemon=True).start()
+
+            settings.destroy()
+            self._start_hotkey_listener()
+
+        tk.Button(
+            btn_frame, text="Abbrechen", command=_on_close,
+            font=FONT_BTN, padx=10, pady=4,
+        ).pack(side=tk.RIGHT, padx=(8, 0))
+
+        tk.Button(
+            btn_frame, text="Speichern", command=_save,
+            font=FONT_BTN_BOLD, bg="#cce5ff", fg="#004085",
+            padx=10, pady=4, cursor="hand2",
+        ).pack(side=tk.RIGHT)
 
 
 # -- Autostart --
