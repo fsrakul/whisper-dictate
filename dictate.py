@@ -676,10 +676,11 @@ def install_autostart():
     target.parent.mkdir(parents=True, exist_ok=True)
 
     if IS_WINDOWS:
+        cmd_script = project_dir / "restart-whisper-dictate.cmd"
         content = (
             'Set WshShell = CreateObject("WScript.Shell")\n'
             f'WshShell.CurrentDirectory = "{project_dir}"\n'
-            f'WshShell.Run "uv run pythonw ""{script}""", 0, False\n'
+            f'WshShell.Run """{cmd_script}""", 0, False\n'
         )
     elif IS_LINUX:
         content = (
