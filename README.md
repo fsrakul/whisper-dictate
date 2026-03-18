@@ -33,6 +33,10 @@ cd whisper-dictate
 uv run dictate.py
 ```
 
+### Windows: Start/Restart per Script
+
+`restart-whisper-dictate.cmd` startet WhisperDictate im Hintergrund. Laeuft der Prozess bereits, wird er vorher beendet und neu gestartet. Das Script nutzt relative Pfade — es kann z.B. per Verknuepfung von einem beliebigen Ort aus aufgerufen werden.
+
 Beim ersten Start wird das Whisper-Modell heruntergeladen (je nach Groesse 75 MB – 3 GB).
 
 ## Verwendung

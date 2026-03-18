@@ -1,6 +1,7 @@
 @echo off
-set VENV=D:\DEV\PROJEKTE\whisper-dictate\.venv\Scripts
-set SCRIPT=D:\DEV\PROJEKTE\whisper-dictate\dictate.py
+cd /d "%~dp0"
+set VENV=%~dp0.venv\Scripts
+set SCRIPT=%~dp0dictate.py
 
 tasklist /fi "IMAGENAME eq WhisperDictate.exe" 2>nul | find "WhisperDictate" >nul
 if not errorlevel 1 (
