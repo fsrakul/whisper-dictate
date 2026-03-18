@@ -110,7 +110,6 @@ class DictateApp:
         # GUI-Widget-Referenzen
         self.result_text: tk.Text | None = None
         self.status_bar: tk.Label | None = None
-        self.stop_btn: tk.Button | None = None
         self.record_btn: tk.Button | None = None
         self.copy_btn: tk.Button | None = None
         self.cancel_btn: tk.Button | None = None
@@ -151,7 +150,15 @@ class DictateApp:
         self._start_hotkey_listener()
 
     def _on_hotkey(self):
-        self.root.after(0, self._toggle_recording)
+        self.root.after(0, self._hotkey_action)
+
+    def _hotkey_action(self):
+        """Hotkey öffnet den Dialog oder toggelt die Aufnahme wenn schon offen."""
+        if self.dialog and self.dialog.winfo_exists():
+            self._toggle_recording()
+        else:
+            self._ensure_dialog()
+            self._update_button_states()
 
     def _toggle_recording(self):
         if self.transcribing:
@@ -162,6 +169,13 @@ class DictateApp:
             self._stop_recording()
 
     # -- Dialog --
+
+    def _focus_dialog(self):
+        """Dialog in den Vordergrund bringen und Fokus setzen."""
+        if not self.dialog or not self.dialog.winfo_exists():
+            return
+        self.dialog.lift()
+        self.dialog.focus_force()
 
     def _ensure_dialog(self):
         """Dialog erstellen falls noch nicht offen."""
@@ -202,26 +216,11 @@ class DictateApp:
         btn_frame = tk.Frame(main_frame)
         btn_frame.grid(row=1, column=0, sticky="ew", pady=(0, 6))
 
-        # Aufnahme stoppen (links)
-        self.stop_btn = tk.Button(
-            btn_frame,
-            text="Aufnahme stoppen",
-            command=self._stop_recording,
-            font=FONT_BTN,
-            bg="#f8d7da",
-            fg="#721c24",
-            disabledforeground="#bbb",
-            padx=12,
-            pady=5,
-            cursor="hand2",
-        )
-        self.stop_btn.pack(side=tk.LEFT)
-
-        # Neue Aufnahme
+        # Aufnahme (Toggle: Start/Stop)
         self.record_btn = tk.Button(
             btn_frame,
-            text="Neue Aufnahme",
-            command=self._start_recording,
+            text="\U0001f3a4 Aufnahme (F5)",
+            command=self._toggle_recording,
             font=FONT_BTN,
             bg="#d4edda",
             fg="#155724",
@@ -229,12 +228,12 @@ class DictateApp:
             pady=5,
             cursor="hand2",
         )
-        self.record_btn.pack(side=tk.LEFT, padx=(8, 0))
+        self.record_btn.pack(side=tk.LEFT)
 
         # Kopieren & Schliessen (rechts)
         self.copy_btn = tk.Button(
             btn_frame,
-            text="Kopieren & Schliessen",
+            text="Kopieren & Schliessen (F6)",
             command=self._copy_and_close,
             font=FONT_BTN_BOLD,
             bg="#cce5ff",
@@ -248,7 +247,7 @@ class DictateApp:
         # Abbrechen
         self.cancel_btn = tk.Button(
             btn_frame,
-            text="Abbrechen",
+            text="Abbrechen (Esc)",
             command=self._close_dialog,
             font=FONT_BTN,
             padx=10,
@@ -256,6 +255,18 @@ class DictateApp:
             cursor="hand2",
         )
         self.cancel_btn.pack(side=tk.RIGHT, padx=(0, 8))
+
+        # Clear
+        self.clear_btn = tk.Button(
+            btn_frame,
+            text="Clear",
+            command=self._clear_text,
+            font=FONT_BTN,
+            padx=10,
+            pady=5,
+            cursor="hand2",
+        )
+        self.clear_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
         # Statusleiste (ganz unten) — Frame mit Label + Config-Button
         status_frame = tk.Frame(main_frame, relief=tk.SUNKEN, bd=1)
@@ -288,6 +299,11 @@ class DictateApp:
         # Shortcuts
         self.dialog.bind("<Escape>", lambda e: self._close_dialog())
         self.dialog.bind("<Control-Return>", lambda e: self._copy_and_close())
+        self.dialog.bind("<F5>", lambda e: self._toggle_recording())
+        self.dialog.bind("<F6>", lambda e: self._copy_and_close())
+
+        # Fokus erzwingen
+        self.dialog.after(50, self._focus_dialog)
 
     def _update_button_states(self):
         """Buttons je nach Zustand aktivieren/deaktivieren."""
@@ -295,18 +311,23 @@ class DictateApp:
             return
 
         if self.recording:
-            self.stop_btn.config(state=tk.NORMAL)
-            self.record_btn.config(state=tk.DISABLED)
+            self.record_btn.config(
+                text="\U0001f3a4 Aufnahme (F5)",
+                bg="#f8d7da", fg="#721c24",
+                state=tk.NORMAL,
+            )
             self.copy_btn.config(state=tk.DISABLED)
             self.cancel_btn.config(state=tk.NORMAL)
         elif self.transcribing:
-            self.stop_btn.config(state=tk.DISABLED)
             self.record_btn.config(state=tk.DISABLED)
             self.copy_btn.config(state=tk.DISABLED)
             self.cancel_btn.config(state=tk.DISABLED)
         else:
-            self.stop_btn.config(state=tk.DISABLED)
-            self.record_btn.config(state=tk.NORMAL)
+            self.record_btn.config(
+                text="\U0001f3a4 Aufnahme (F5)",
+                bg="#d4edda", fg="#155724",
+                state=tk.NORMAL,
+            )
             self.copy_btn.config(state=tk.NORMAL)
             self.cancel_btn.config(state=tk.NORMAL)
 
@@ -427,7 +448,7 @@ class DictateApp:
             self.result_text.insert(tk.INSERT, text.strip())
 
         self._set_status(
-            f"Fertig. {hotkey_label(self.cfg['hotkey'])} oder 'Neue Aufnahme' fuer weiteres Diktat.",
+            "Fertig. F5 oder Aufnahme klicken fuer weiteres Diktat.",
             fg="#228b22",
         )
         self._update_button_states()
@@ -444,6 +465,11 @@ class DictateApp:
         self.dialog.after(500, self._pulse)
 
     # -- Actions --
+
+    def _clear_text(self):
+        """Textfeld komplett leeren."""
+        if self.result_text:
+            self.result_text.delete("1.0", tk.END)
 
     def _copy_and_close(self):
         if self.result_text:
