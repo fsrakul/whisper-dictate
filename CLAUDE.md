@@ -45,5 +45,6 @@ Konfigurierbare Werte (auch über den Zahnrad-Button im Dialog änderbar):
 - `model_size` — Whisper-Modellgröße (tiny/base/small/medium/large-v3)
 - `language` — Sprache ("de", "" für auto-detect)
 - `hotkey` — Globaler Hotkey im pynput-Format (z.B. `<ctrl>+<alt>+d`)
+- `initial_prompt` — Vokabular-Hilfe: kommagetrennte Begriffe, die Whisper als Kontext-Hinweis erhält (verbessert Erkennung von Fachbegriffen/Fremdwörtern)
 
 Defaults: siehe `DEFAULT_CONFIG` in `dictate.py`.

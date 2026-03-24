@@ -37,6 +37,8 @@ DEFAULT_CONFIG = {
     "language": "de",
     "hotkey": "<ctrl>+<alt>+d",
     "device": "auto",
+    "initial_prompt": "Git, Commit, Push, Pull, Merge, Branch, Claude Code, Repository, "
+    "API, Token, Frontend, Backend, Deploy, Release, Sprint, Ticket",
 }
 
 
@@ -420,8 +422,9 @@ class DictateApp:
                 wavfile.write(tmp_path, SAMPLE_RATE, audio_int16)
 
             lang = self.cfg["language"] or None
+            prompt = self.cfg.get("initial_prompt", "") or None
             segments, info = self.model.transcribe(
-                tmp_path, language=lang, beam_size=5
+                tmp_path, language=lang, beam_size=5, initial_prompt=prompt
             )
             text = " ".join(seg.text.strip() for seg in segments)
 
@@ -507,10 +510,10 @@ class DictateApp:
 
         settings.protocol("WM_DELETE_WINDOW", _on_close)
 
-        w, h = 380, 260
+        # Größe automatisch berechnen nach Layout
+        settings.update_idletasks()
         screen_w = settings.winfo_screenwidth()
         screen_h = settings.winfo_screenheight()
-        settings.geometry(f"{w}x{h}+{(screen_w - w) // 2}+{(screen_h - h) // 2}")
 
         frame = tk.Frame(settings, padx=20, pady=15)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -554,15 +557,26 @@ class DictateApp:
             row=2, column=2, sticky="w", padx=(4, 0), pady=(0, 8)
         )
 
+        # -- Initial Prompt (Vokabular-Hilfe) --
+        tk.Label(frame, text="Vokabular:", font=FONT_NORMAL).grid(
+            row=3, column=0, sticky="nw", pady=(0, 8)
+        )
+        prompt_text = tk.Text(frame, width=25, height=3, font=FONT_NORMAL, wrap=tk.WORD)
+        prompt_text.insert("1.0", self.cfg.get("initial_prompt", ""))
+        prompt_text.grid(row=3, column=1, sticky="we", padx=(10, 0), pady=(0, 8))
+        tk.Label(frame, text="(Begriffe, kommagetrennt)", font=FONT_STATUS, fg="#888").grid(
+            row=3, column=2, sticky="nw", padx=(4, 0), pady=(0, 8)
+        )
+
         # -- Hotkey --
         tk.Label(frame, text="Hotkey:", font=FONT_NORMAL).grid(
-            row=3, column=0, sticky="w", pady=(0, 8)
+            row=4, column=0, sticky="w", pady=(0, 8)
         )
         hotkey_var = tk.StringVar(value=self.cfg["hotkey"])
         hotkey_entry = tk.Entry(
             frame, textvariable=hotkey_var, width=20, font=FONT_NORMAL
         )
-        hotkey_entry.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
+        hotkey_entry.grid(row=4, column=1, sticky="w", padx=(10, 0), pady=(0, 8))
 
         # Hotkey-Capture: Tastenkombination aufzeichnen
         captured_keys: set[str] = set()
@@ -602,17 +616,18 @@ class DictateApp:
 
         # -- Fehler-Label --
         error_label = tk.Label(frame, text="", font=FONT_STATUS, fg="#cc0000")
-        error_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        error_label.grid(row=5, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         # -- Buttons --
         btn_frame = tk.Frame(frame)
-        btn_frame.grid(row=5, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        btn_frame.grid(row=6, column=0, columnspan=3, sticky="e", pady=(12, 0))
 
         def _save():
             new_hotkey = hotkey_var.get().strip()
             new_model = model_var.get()
             new_device = device_var.get()
             new_lang = lang_var.get().strip() or ""
+            new_prompt = prompt_text.get("1.0", "end-1c").strip()
 
             # Hotkey validieren
             try:
@@ -630,6 +645,7 @@ class DictateApp:
             self.cfg["device"] = new_device
             self.cfg["language"] = new_lang
             self.cfg["hotkey"] = new_hotkey
+            self.cfg["initial_prompt"] = new_prompt
             save_config(self.cfg)
 
             if model_changed:
@@ -650,6 +666,12 @@ class DictateApp:
             font=FONT_BTN_BOLD, bg="#cce5ff", fg="#004085",
             padx=10, pady=4, cursor="hand2",
         ).pack(side=tk.RIGHT)
+
+        # Fenstergröße automatisch an Inhalt anpassen und zentrieren
+        settings.update_idletasks()
+        w = settings.winfo_reqwidth()
+        h = settings.winfo_reqheight()
+        settings.geometry(f"{w}x{h}+{(screen_w - w) // 2}+{(screen_h - h) // 2}")
 
 
 # -- Autostart --
